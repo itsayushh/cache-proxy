@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
-  "bin":{
+  "bin": {
     "cache-proxy": "./index.js"
   },
   "scripts": {
@@ -16,6 +16,7 @@
   "description": "",
   "dependencies": {
     "commander": "^14.0.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "mime-types": "^3.0.1"
   }
 }

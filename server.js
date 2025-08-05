@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm';
 
 
 const app = express();
-export default async function startProxyServer(options){
+export async function startProxyServer(options){
     app.use(async (req, res, next) => {
         const fullUrl = options.origin + req.url;
         const hashedFileName = crypto.createHash('sha256').update(fullUrl).digest('hex');
@@ -54,8 +54,6 @@ export default async function startProxyServer(options){
         res.set(headers);
         res.setHeader('X-Cache', 'MISS');
         return res.sendFile(path.resolve(cacheFilePath));
-
-
     });
 
     app.listen(options.port,()=>{
@@ -65,3 +63,13 @@ export default async function startProxyServer(options){
     });
 }
 
+export async function clearCache() {
+    const cacheDir = './cache/';
+    if (fs.existsSync(cacheDir)) {
+        fs.rmSync(cacheDir, { recursive: true, force: true });
+        db.delete(cacheMetadata).run();
+        console.log('Cache cleared successfully.');
+    } else {
+        console.log('No cache directory found to clear.');
+    }
+}

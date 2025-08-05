@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import startProxyServer from "./server.js";
+import {startProxyServer,clearCache} from "./server.js";
 const program = new Command();
 
 program
@@ -25,4 +25,11 @@ program
         startProxyServer(options);
     });
 
+program
+    .command("clear")
+    .description("Clear the cache")
+    .alias("cls")
+    .action(async () => {
+        clearCache();
+    });
 program.parse(process.argv);

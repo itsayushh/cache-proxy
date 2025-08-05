@@ -2,47 +2,60 @@ import express from 'express';
 import fs from 'fs';
 import mime from 'mime-types'
 import path from 'path';
+import crypto from 'crypto';
+import { db } from './db/db.js';
+import { cacheMetadata } from './db/schema.js';
+import { eq } from 'drizzle-orm';
 
 
 const app = express();
 export default async function startProxyServer(options){
     app.use(async (req, res, next) => {
-        let requestRoute = `./cache${req.path}`;
-        console.log(`Fetching from origin: ${options.origin + req.path}`);
-        if(fs.existsSync(requestRoute)) {
-            const cacheFilePath = fs.readdirSync(requestRoute)[0];
-            const absolutePath = path.resolve(`${requestRoute}/${cacheFilePath}`);
-            console.log(`Cache miss for ${req.url}`);
+        const fullUrl = options.origin + req.url;
+        const hashedFileName = crypto.createHash('sha256').update(fullUrl).digest('hex');
+        const cacheDir = path.join('./cache',req.path)
+        let contentType = 'application/octet-stream';
+        console.log(`Request URL: ${fullUrl}`);
+        const meta = db.select().from(cacheMetadata).where(eq(cacheMetadata.hash, hashedFileName)).get();
+        if(meta && fs.existsSync(meta.path)) {
+            console.log(`Cache hit for: ${fullUrl}`);
             res.setHeader('X-Cache', 'HIT');
-            res.sendFile(absolutePath);
-            return;
-        }else{
-            fs.mkdirSync(requestRoute, { recursive: true });
-            const response = await fetch(options.origin + req.path)
-            if(!response.ok){
-                console.error(`Failed to fetch from origin: ${response.statusText}`);
-                res.status(response.status).send(`Error fetching from origin: ${response.statusText}`);
-                return;
-            }
-            const data = Buffer.from(await response.arrayBuffer());
-            console.log(`Fetching data: ${response.url}, type: ${response.headers.get('content-type')} , res: ${response}`);
-            const fileType = mime.extension(response.headers.get('content-type')) || 'txt';
-            requestRoute += `/response${Date.now()}.${fileType}`;
-            const absolutePath = path.resolve(requestRoute);
-            console.log(`Serving cached response for ${req.url}`);
-            fs.writeFileSync(absolutePath, data);
-            console.log(`Cache miss for ${req.url}, writing to cache.`);
-            let header={};
-            response.headers.forEach((value, key) => {
-                if(key !== 'content-encoding' && key != 'transfer-encoding' && key != 'content-length') {
-                    header[key] = value;
-                }
-            });
-            res.set(header);
-            res.setHeader('X-Cache', 'MISS');
-            res.sendFile(absolutePath);
+            res.setHeader('Content-Type', meta.contentType || contentType);
+            return res.sendFile(path.resolve(meta.path));
+        }
+        const response = await fetch(fullUrl);
+        if (!response.ok) {
+            res.status(response.status).send(`Error fetching from origin: ${response.statusText}`);
             return;
         }
+        console.log(`Cache miss for: ${fullUrl}`);
+        const data = Buffer.from(await response.arrayBuffer());
+        contentType = response.headers.get('content-type') || contentType;
+        let extension = mime.extension(contentType);
+        let cacheFilePath = path.join(cacheDir, `${hashedFileName}.${extension}`);
+
+        fs.mkdirSync(cacheDir, { recursive: true });
+        fs.writeFileSync(cacheFilePath, data);
+        const headers = {};
+        response.headers.forEach((value, name) => {
+            if (!['content-encoding', 'transfer-encoding', 'content-length'].includes(name)) {
+                headers[name] = value;
+            }
+        });
+        await db.insert(cacheMetadata).values({
+            hash: hashedFileName,
+            url: fullUrl,
+            path: cacheFilePath,
+            extension: extension,
+            contentType: contentType,
+            headers: JSON.stringify(headers),
+            lastAccessed: new Date().toISOString()
+        })
+        res.set(headers);
+        res.setHeader('X-Cache', 'MISS');
+        return res.sendFile(path.resolve(cacheFilePath));
+
+
     });
 
     app.listen(options.port,()=>{

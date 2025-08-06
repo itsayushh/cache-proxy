@@ -20,7 +20,8 @@
     "crypto": "^1.0.1",
     "drizzle-orm": "^0.44.4",
     "express": "^5.1.0",
-    "mime-types": "^3.0.1"
+    "mime-types": "^3.0.1",
+    "redis": "^5.8.0"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.4"

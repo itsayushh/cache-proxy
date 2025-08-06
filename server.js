@@ -9,6 +9,9 @@ import { eq } from 'drizzle-orm';
 
 
 const app = express();
+const TTL = 1000 * 60 * 60 * 24; // 1 day1
+
+
 export async function startProxyServer(options){
     app.use(async (req, res, next) => {
         const fullUrl = options.origin + req.url;
@@ -17,11 +20,16 @@ export async function startProxyServer(options){
         let contentType = 'application/octet-stream';
         console.log(`Request URL: ${fullUrl}`);
         const meta = db.select().from(cacheMetadata).where(eq(cacheMetadata.hash, hashedFileName)).get();
-        if(meta && fs.existsSync(meta.path)) {
+        const isExpired = meta && (new Date(meta.lastAccessed).getTime() + TTL < Date.now()) ;
+        if(meta && !isExpired) {
             console.log(`Cache hit for: ${fullUrl}`);
             res.setHeader('X-Cache', 'HIT');
             res.setHeader('Content-Type', meta.contentType || contentType);
             return res.sendFile(path.resolve(meta.path));
+        }else if(meta && isExpired) {
+            console.log(`Cache expired for: ${fullUrl}`);
+            db.delete(cacheMetadata).where(eq(cacheMetadata.hash, hashedFileName)).run();
+            fs.rmSync(meta.path, { recursive: true, force: true });
         }
         const response = await fetch(fullUrl);
         if (!response.ok) {
